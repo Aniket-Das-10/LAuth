@@ -7,6 +7,7 @@ const session = require("../models/session.model");
 exports.register = async (req, res) => {
   try {
     const { username, email, password } = req.body;
+
     const isalreadyExist = await user.findOne({
       $or: [{ email }, { username }],
     });
@@ -30,43 +31,42 @@ exports.register = async (req, res) => {
       expiresIn: "7d",
     });
 
-    /**
-     * res.cookie("refreshToken", refreshToken, {
+     res.cookie("refreshToken", refreshToken, {
         httpOnly: true,
       secure: true,
       sameSite: "strict",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
-     */
+
     hashRefreshToken = crypto
-        .createHash("sha256")
-        .update(refreshToken)
-        .digest("hex");
+      .createHash("sha256")
+      .update(refreshToken)
+      .digest("hex");
 
     const Session = await session.create({
-        userId: newUser._id,
-        refreshTokenHash: hashRefreshToken,
-        ip: req.ip,
-        useerAgent: req.headers["user-agent"],
+      userId: newUser._id,
+      refreshTokenHash: hashRefreshToken,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
     });
 
     const accessToken = jwt.sign(
-        { 
-            id: newUser._id,
-            sessionId: session._id,
-        }, 
-        config.JWT_SECRET, 
-        {
-            expiresIn: "15m", 
-        }
-   );
+      {
+        id: newUser._id,
+        sessionId: Session._id,
+      },
+      config.JWT_SECRET,
+      {
+        expiresIn: "15m",
+      },
+    );
 
     res.status(201).json({
       message: "User registered successfully",
       user: newUser,
-      token: token,
+      accessToken,
+      refreshToken,
     });
-    
   } catch (error) {
     res.status(500).json({ message: "Internal server error" });
   }
@@ -89,15 +89,88 @@ exports.getme = async (req, res) => {
 exports.refreshToken = async (req, res) => {
   try {
     const refreshToken = req.cookies.refreshToken;
+
     if (!refreshToken) {
       return res.status(401).json({ message: "Refresh Token not found" });
     }
+
     const decoded = jwt.verify(refreshToken, config.JWT_SECRET);
+
+    const refreshTokenHash = crypto.createHash("sha256").update(refreshToken).digest("hex");
+        
+        const Session = await session.findOne({
+            refreshTokenHash,
+            revoked: false
+        })
+
+    if(!Session) {
+            return res.status(401).json({
+                message: "session not found"
+            })
+        }
+
     const accessToken = jwt.sign({ id: decoded.id }, config.JWT_SECRET, {
       expiresIn: "15m",
     });
+
+    const newRefreshToken = jwt.sign({ id: decoded.id }, config.JWT_SECRET, {
+      expiresIn: "7d",
+    });
+
+    const newRefreshTokenHash = crypto.createHash("sha256").update(newRefreshToken).digest("hex");
+
+    Session.refreshTokenHash = newRefreshTokenHash;
+    await Session.save();
+
+    res.cookie("refreshToken", newRefreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
     res.status(200).json({ message: "Refresh Token successful", accessToken });
   } catch (error) {
-    res.status(500).json({ message: "Internal server error" });
+    res.status(500).json({ message: "issue while refreshing token creation" });
   }
 };
+
+exports.logout = async (req, res) => {
+    try {
+        const refreshToken = req.cookies.refreshToken;
+        
+        if (!refreshToken) {
+            return res.status(401).json(
+                {
+                    message: "Refresh Token not found"
+                }
+            )
+        }
+
+        const refreshTokenHash = crypto.createHash("sha256").update(refreshToken).digest("hex");
+        
+        const Session = await session.findOne({
+            refreshTokenHash,
+            revoked: false
+        })
+
+        if(!Session) {
+            return res.status(401).json({
+                message: "session not found"
+            })
+        }
+
+        Session.revoked = true;
+        await Session.save();
+
+        res.clearCookie("refreshToken");
+        return res.status(200).json({
+            message: "Logout successfully"
+        })
+    }catch(error){
+        return res.status(500).json({
+            message: error.message
+        })
+    }
+};
+
