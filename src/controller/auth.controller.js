@@ -72,6 +72,71 @@ exports.register = async (req, res) => {
   }
 };
 
+exports.login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email and password are required" });
+    }
+
+    const existingUser = await user.findOne({ email });
+
+    if (!existingUser) {
+      return res.status(400).json({ message: "Invalid email or password" });
+    }
+
+    const isMatch = await existingUser.comparePassword(password);
+
+    if (!isMatch) {
+      return res.status(400).json({ message: "Invalid email or password" });
+    }
+
+    const refreshToken = jwt.sign({ id: existingUser._id }, config.JWT_SECRET, {
+      expiresIn: "7d",
+    });
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    const hashRefreshToken = crypto
+      .createHash("sha256")
+      .update(refreshToken)
+      .digest("hex");
+
+    const Session = await session.create({
+      userId: existingUser._id,
+      refreshTokenHash: hashRefreshToken,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    const accessToken = jwt.sign(
+      {
+        id: existingUser._id,
+        sessionId: Session._id,
+      },
+      config.JWT_SECRET,
+      {
+        expiresIn: "15m",
+      },
+    );
+
+    res.status(200).json({
+      message: "Login successful",
+      user: existingUser,
+    
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to login" });
+
+  }
+}
+
 exports.getme = async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
@@ -173,4 +238,24 @@ exports.logout = async (req, res) => {
         })
     }
 };
+
+exports.logoutAll = async (req, res) => {
+  const refreshToken = req.cookies.refreshToken;
+
+  if (!refreshToken) {
+    return res.status(401).json({ message: "Refresh Token not found" });
+  }
+
+  const decoded = jwt.verify(refreshToken, config.JWT_SECRET);
+
+  await session.updateMany(
+    { userId: decoded.id, revoked: false },
+    { revoked: true }
+  );
+
+  res.clearCookie("refreshToken");
+  return res.status(200).json({ message: "Logged out from all sessions" });   
+};
+
+
 

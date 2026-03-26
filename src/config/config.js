@@ -10,6 +10,24 @@ if (!process.env.JWT_SECRET) {
     process.exit(1);
 }
 
+if (!process.env.GOOGLE_CLIENT_ID) {
+    console.error('GOOGLE_CLIENT_ID is not defined in environment variables');
+    process.exit(1);
+} 
+if (!process.env.GOOGLE_CLIENT_SECRET) {
+    console.error('GOOGLE_CLIENT_SECRET is not defined in environment variables');
+    process.exit(1);
+}
+if (!process.env.GOOGLE_REFRESH_TOKEN) {
+    console.error('GOOGLE_REFRESH_TOKEN is not defined in environment variables');
+    process.exit(1);
+}
+if (!process.env.GOOGLE_USER) {
+    console.error('GOOGLE_USER is not defined in environment variables');
+    process.exit(1);
+}
+
+
 
 const config = {
     MONGO_URL: process.env.MONGO_URL,
