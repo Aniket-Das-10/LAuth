@@ -25,5 +25,10 @@ router.post('/logout', logout);
  * @route POST /api/auth/logoutAll
  */
 router.post('/logoutAll', logoutAll);
+/**
+ * @route POST /api/auth/verify-otp
+ */
+router.post('/verify-otp', verifyOtp);
+
 
 module.exports = router;
